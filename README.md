@@ -1,10 +1,10 @@
 ---
-services: Network
-platforms: .Net
+services: virtual-network
+platforms: dotnet
 author: lenala
 ---
 
-# Getting Started with Network - Manage Vpn Gateway V Net2 V Net Connection - in .Net #
+# Manage virtual network to virtual network VPN connection #
 
           Azure Network sample for managing virtual network gateway.
            - Create 2 virtual networks with subnets and 2 virtual network gateways corresponding to each network
@@ -22,7 +22,7 @@ author: lenala
 
 To run this sample:
 
-Set the environment variable `AZURE_AUTH_LOCATION` with the full path for an auth file. See [how to create an auth file](https://github.com/Azure/azure-sdk-for-net/blob/Fluent/AUTH.md).
+Set the environment variable `AZURE_AUTH_LOCATION` with the full path for an auth file. See [how to create an auth file](https://github.com/Azure/azure-libraries-for-java/blob/master/AUTH.md).
 
     git clone https://github.com/Azure-Samples/network-dotnet-manage-virtual-network-to-virtual-network-vpn-connection.git
 
