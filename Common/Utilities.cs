@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License. See License.txt in the project root for license information.
 
+using Azure.ResourceManager.Network;
+using Azure.ResourceManager.Network.Models;
+using Azure.ResourceManager.Resources;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -51,5 +54,27 @@ namespace Azure.ResourceManager.Samples.Common
         public static string CreatePassword() => "azure12345QWE!";
 
         public static string CreateUsername() => "tirekicker";
+
+        public static async Task<List<T>> ToEnumerableAsync<T>(this IAsyncEnumerable<T> asyncEnumerable)
+        {
+            List<T> list = new List<T>();
+            await foreach (T item in asyncEnumerable)
+            {
+                list.Add(item);
+            }
+            return list;
+        }
+
+        public static async Task<PublicIPAddressResource> CreatePublicIP(ResourceGroupResource resourceGroup, string publicIPName = null)
+        {
+            publicIPName = publicIPName is null ? CreateRandomName("pip") : publicIPName;
+            var publicIPInput = new PublicIPAddressData()
+            {
+                Location = resourceGroup.Data.Location,
+                PublicIPAllocationMethod = NetworkIPAllocationMethod.Dynamic,
+            };
+            var publicIPLro = await resourceGroup.GetPublicIPAddresses().CreateOrUpdateAsync(WaitUntil.Completed, publicIPName, publicIPInput);
+            return publicIPLro.Value;
+        }
     }
 }
