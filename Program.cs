@@ -1,24 +1,21 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License. See License.txt in the project root for license information.
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using Microsoft.Azure.Management.Compute.Fluent;
-using Microsoft.Azure.Management.Fluent;
-using Microsoft.Azure.Management.Network.Fluent;
-using Microsoft.Azure.Management.Network.Fluent.Models;
-using Microsoft.Azure.Management.ResourceManager.Fluent;
-using Microsoft.Azure.Management.ResourceManager.Fluent.Core;
-using Microsoft.Azure.Management.ResourceManager.Fluent.Core.ResourceActions;
-using Microsoft.Azure.Management.Samples.Common;
-using Microsoft.Azure.Management.Storage.Fluent;
+using Azure;
+using Azure.Core;
+using Azure.Identity;
+using Azure.ResourceManager.Resources.Models;
+using Azure.ResourceManager.Samples.Common;
+using Azure.ResourceManager.Resources;
+using Azure.ResourceManager;
+using Azure.ResourceManager.Network;
+using Azure.ResourceManager.Network.Models;
 
 namespace ManageVpnGatewayVNet2VNetConnection
 {
     public class Program
     {
-        private static readonly Region region = Region.USWest2;
+        private static ResourceIdentifier? _resourceGroupId = null;
 
         /**
          * Azure Network sample for managing virtual network gateway.
@@ -32,24 +29,21 @@ namespace ManageVpnGatewayVNet2VNetConnection
          *  - List VPN Gateway connections for the first gateway
          *  - Create 2 virtual machines, each one in its network and verify connectivity between them
          */
-        public static void RunSample(IAzure azure)
+        public static async Task RunSample(ArmClient client)
         {
-            string rgName = SdkContext.RandomResourceName("rg", 24);
-            string vnetName = SdkContext.RandomResourceName("vnet", 20);
-            string vnet2Name = SdkContext.RandomResourceName("vnet", 20);
-            string vpnGatewayName = SdkContext.RandomResourceName("vngw", 20);
-            string vpnGateway2Name = SdkContext.RandomResourceName("vngw2", 20);
-            string connectionName = SdkContext.RandomResourceName("con", 20);
-            string connection2Name = SdkContext.RandomResourceName("con2", 20);
-            string nwName = SdkContext.RandomResourceName("nw", 20);
-            string vm1Name = SdkContext.RandomResourceName("vm1", 20);
-            string vm2Name = SdkContext.RandomResourceName("vm2", 20);
-            string rootname = Utilities.CreateUsername();
-            string password = SdkContext.RandomResourceName("pWd!", 15);
-            string containerName = "results";
-
             try
             {
+                // Get default subscription
+                SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
+
+                // Create a resource group in the EastUS region
+                string rgName = Utilities.CreateRandomName("NetworkSampleRG");
+                Utilities.Log($"Creating resource group...");
+                ArmOperation<ResourceGroupResource> rgLro = await subscription.GetResourceGroups().CreateOrUpdateAsync(WaitUntil.Completed, rgName, new ResourceGroupData(AzureLocation.EastUS));
+                ResourceGroupResource resourceGroup = rgLro.Value;
+                _resourceGroupId = resourceGroup.Id;
+                Utilities.Log("Created a resource group with name: " + resourceGroup.Data.Name);
+
                 //============================================================
                 // Create virtual network
                 Utilities.Log("Creating virtual network...");
@@ -213,8 +207,12 @@ namespace ManageVpnGatewayVNet2VNetConnection
             {
                 try
                 {
-                    Utilities.Log("Deleting Resource Group: " + rgName);
-                    azure.ResourceGroups.BeginDeleteByName(rgName);
+                    if (_resourceGroupId is not null)
+                    {
+                        Utilities.Log($"Deleting Resource Group...");
+                        await client.GetResourceGroupResource(_resourceGroupId).DeleteAsync(WaitUntil.Completed);
+                        Utilities.Log($"Deleted Resource Group: {_resourceGroupId.Name}");
+                    }
                 }
                 catch (NullReferenceException)
                 {
@@ -227,24 +225,21 @@ namespace ManageVpnGatewayVNet2VNetConnection
             }
         }
 
-        public static void Main(string[] args)
+        public static async Task Main(string[] args)
         {
+
             try
             {
                 //=================================================================
                 // Authenticate
-                var credentials =
-                    SdkContext.AzureCredentialsFactory.FromFile(
-                        Environment.GetEnvironmentVariable("AZURE_AUTH_LOCATION"));
+                var clientId = Environment.GetEnvironmentVariable("CLIENT_ID");
+                var clientSecret = Environment.GetEnvironmentVariable("CLIENT_SECRET");
+                var tenantId = Environment.GetEnvironmentVariable("TENANT_ID");
+                var subscription = Environment.GetEnvironmentVariable("SUBSCRIPTION_ID");
+                ClientSecretCredential credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+                ArmClient client = new ArmClient(credential, subscription);
 
-                var azure = Azure.Configure()
-                    .WithLogLevel(HttpLoggingDelegatingHandler.Level.Basic)
-                    .Authenticate(credentials)
-                    .WithDefaultSubscription();
-
-                // Print selected subscription
-                Utilities.Log("Selected subscription: " + azure.SubscriptionId);
-                RunSample(azure);
+                await RunSample(client);
             }
             catch (Exception ex)
             {
