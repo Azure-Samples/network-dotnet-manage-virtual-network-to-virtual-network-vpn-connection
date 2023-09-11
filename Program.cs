@@ -80,32 +80,38 @@ namespace ManageVpnGatewayVNet2VNetConnection
                 var pip1 = await Utilities.CreatePublicIP(resourceGroup);
                 var pip2 = await Utilities.CreatePublicIP(resourceGroup);
 
-                VirtualNetworkGatewayData vpnGatewayInput = new VirtualNetworkGatewayData()
+                string virtualNetworkGatewayName = Utilities.CreateRandomName("azsmnet");
+                string ipConfigName = Utilities.CreateRandomName("azsmnet");
+                var virtualNetworkGateway = new VirtualNetworkGatewayData()
                 {
                     Location = resourceGroup.Data.Location,
-                    GatewayType = VirtualNetworkGatewayType.Vpn,
-                    VpnType = VpnType.RouteBased,
-                    EnableBgp = false,
                     Sku = new VirtualNetworkGatewaySku()
                     {
                         Name = VirtualNetworkGatewaySkuName.Basic,
                         Tier = VirtualNetworkGatewaySkuTier.Basic
                     },
+                    Tags = { { "key", "value" } },
+                    EnableBgp = false,
+                    GatewayType = VirtualNetworkGatewayType.Vpn,
+                    VpnType = VpnType.RouteBased,
                     IPConfigurations =
+                {
+                    new VirtualNetworkGatewayIPConfiguration()
                     {
-                        new VirtualNetworkGatewayIPConfiguration()
-                        {
-                            Name = "config1",
-                            PrivateIPAllocationMethod = NetworkIPAllocationMethod.Dynamic,
-                            PublicIPAddressId = pip1.Id,
-                            SubnetId = vnet1.Id,
-                        }
+                        Name = ipConfigName,
+                        PrivateIPAllocationMethod = NetworkIPAllocationMethod.Dynamic,
+                        PublicIPAddressId  = pip1.Data.Id,
+                        SubnetId = vnet1.Data.Subnets.First().Id,
+                  
                     }
+                }
                 };
-                var vpnGatewayLro = await resourceGroup.GetVirtualNetworkGateways().CreateOrUpdateAsync(WaitUntil.Completed, vpnGatewayName, vpnGatewayInput);
-                VirtualNetworkGatewayResource vpnGateway = vpnGatewayLro.Value;
-                Utilities.Log($"Created virtual network gateway: {vpnGateway.Data.Name}");
+                var virtualNetworkGatewayCollection = resourceGroup.GetVirtualNetworkGateways();
+                var putVirtualNetworkGatewayResponseOperation = await virtualNetworkGatewayCollection.CreateOrUpdateAsync(WaitUntil.Completed, virtualNetworkGatewayName, virtualNetworkGateway);
 
+
+                //Utilities.Log($"Created virtual network gateway: {vpnGateway.Data.Name}");
+                await Console.Out.WriteLineAsync();
                 //============================================================
                 // Create second virtual network
                 VirtualNetworkData vnetInput2 = new VirtualNetworkData()
