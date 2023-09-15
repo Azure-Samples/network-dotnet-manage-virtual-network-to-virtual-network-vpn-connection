@@ -4,6 +4,7 @@
 using Azure.ResourceManager.Network;
 using Azure.ResourceManager.Network.Models;
 using Azure.ResourceManager.Resources;
+using Azure.ResourceManager.Storage;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -75,6 +76,14 @@ namespace Azure.ResourceManager.Samples.Common
             };
             var publicIPLro = await resourceGroup.GetPublicIPAddresses().CreateOrUpdateAsync(WaitUntil.Completed, publicIPName, publicIPInput);
             return publicIPLro.Value;
+        }
+
+        public static async Task CreateContainer(StorageAccountResource storageAccount, string containerName = null)
+        {
+            containerName = containerName is null ? CreateRandomName("container") : containerName;
+            BlobContainerData containerInput = new BlobContainerData();
+            var containerLro = await storageAccount.GetBlobService().GetBlobContainers().CreateOrUpdateAsync(WaitUntil.Completed, containerName, containerInput);
+            return containerLro.Value;
         }
     }
 }

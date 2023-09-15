@@ -10,6 +10,8 @@ using Azure.ResourceManager.Resources;
 using Azure.ResourceManager;
 using Azure.ResourceManager.Network;
 using Azure.ResourceManager.Network.Models;
+using Azure.ResourceManager.Storage.Models;
+using Azure.ResourceManager.Storage;
 
 namespace ManageVpnGatewayVNet2VNetConnection
 {
@@ -31,18 +33,31 @@ namespace ManageVpnGatewayVNet2VNetConnection
          */
         public static async Task RunSample(ArmClient client)
         {
+            string rgName = Utilities.CreateRandomName("NetworkSampleRG");
             string vnetName1 = Utilities.CreateRandomName("vnet1-");
             string vnetName2 = Utilities.CreateRandomName("vnet2-");
             string vnetGatewayName1 = Utilities.CreateRandomName("vnetGateway1-");
             string vnetGatewayName2 = Utilities.CreateRandomName("vnetGateway2-");
+            string pipName1 = Utilities.CreateRandomName("pip1-");
+            string pipName2 = Utilities.CreateRandomName("pip2-");
+            string vpnConnectionName = Utilities.CreateRandomName("vnet-to-vnet-");
+            string networkWatcherName = Utilities.CreateRandomName("watcher");
+            string storageAccountName = Utilities.CreateRandomName("azstorageaccoun");
+
+            rgName = "NetworkSampleRG000";
+            vnetName1 = "vnet1-00";
+            vnetName2 = "vnet2-00";
+            vnetGatewayName1 = "vnetGateway1-00";
+            vnetGatewayName2 = "vnetGateway2-00";
+            pipName1 = "pip1-00";
+            pipName2 = "pip2-00";
+            networkWatcherName = "watcher-00";
+            storageAccountName = "azstorageaccoun5154";
             {
                 // Get default subscription
                 SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
 
                 // Create a resource group in the EastUS region
-                string rgName = Utilities.CreateRandomName("NetworkSampleRG");
-                //rgName = "AZNetworkRG000";
-                //vnetName1 = "VNET1";
                 Utilities.Log($"Creating resource group...");
                 ArmOperation<ResourceGroupResource> rgLro = await subscription.GetResourceGroups().CreateOrUpdateAsync(WaitUntil.Completed, rgName, new ResourceGroupData(AzureLocation.EastUS));
                 ResourceGroupResource resourceGroup = rgLro.Value;
@@ -69,10 +84,9 @@ namespace ManageVpnGatewayVNet2VNetConnection
                 // Create virtual network gateway
                 Utilities.Log("Creating virtual network gateway...");
 
-                //;
                 // Create two public ip for virtual network gateway
-                var pip1 = await Utilities.CreatePublicIP(resourceGroup);
-                var pip2 = await Utilities.CreatePublicIP(resourceGroup);
+                var pip1 = await Utilities.CreatePublicIP(resourceGroup, pipName1);
+                var pip2 = await Utilities.CreatePublicIP(resourceGroup, pipName2);
 
                 VirtualNetworkGatewayData vpnGatewayInput1 = new VirtualNetworkGatewayData()
                 {
@@ -149,32 +163,45 @@ namespace ManageVpnGatewayVNet2VNetConnection
 
                 //============================================================
                 // Create virtual network gateway connection
+
                 Utilities.Log("Creating virtual network gateway connection...");
-                //IVirtualNetworkGatewayConnection connection = vngw1.Connections
-                //    .Define(connectionName)
-                //    .WithVNetToVNet()
-                //    .WithSecondVirtualNetworkGateway(vngw2)
-                //    .WithSharedKey("MySecretKey")
-                //    .Create();
-                Utilities.Log("Created virtual network gateway connection");
+                VirtualNetworkGatewayConnectionType connectionType = VirtualNetworkGatewayConnectionType.Vnet2Vnet;
+                VirtualNetworkGatewayConnectionData gatewayConnectionInput = new VirtualNetworkGatewayConnectionData(vpnGateway1.Data, connectionType)
+                {
+                    Location = resourceGroup.Data.Location,
+                    VirtualNetworkGateway2 = vpnGateway2.Data,
+                    SharedKey = "MySecretKey"
+                };
+                var connectionLro = await resourceGroup.GetVirtualNetworkGatewayConnections().CreateOrUpdateAsync(WaitUntil.Completed, vpnConnectionName, gatewayConnectionInput);
+                VirtualNetworkGatewayConnectionResource connection = connectionLro.Value;
+                Utilities.Log($"Created virtual network gateway connection: {connection.Data.Name}");
 
-                ////============================================================
-                //// Troubleshoot the connection
+                //============================================================
+                // Troubleshoot the connection
 
-                //// create Network Watcher
-                //INetworkWatcher nw = azure.NetworkWatchers.Define(nwName)
-                //        .WithRegion(region)
-                //        .WithExistingResourceGroup(rgName)
-                //        .Create();
-                //// Create storage account to store troubleshooting information
-                //IStorageAccount storageAccount = azure.StorageAccounts.Define("sa" + SdkContext.RandomResourceName("", 8))
-                //        .WithRegion(region)
-                //        .WithExistingResourceGroup(rgName)
-                //        .Create();
-                //// Create storage container to store troubleshooting results
-                //string accountKey = storageAccount.GetKeys()[0].Value;
-                //string connectionString = string.Format("DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1}", storageAccount.Name, accountKey);
-                //Utilities.CreateContainer(connectionString, containerName);
+                // create Network Watcher
+                NetworkWatcherData networkWatcherInput = new NetworkWatcherData()
+                {
+                    //Location = resourceGroup.Data.Location,
+                    Location = AzureLocation.WestUS2,
+                };
+                var networkWatcherLro = await resourceGroup.GetNetworkWatchers().CreateOrUpdateAsync(WaitUntil.Completed, networkWatcherName, networkWatcherInput);
+                NetworkWatcherResource networkWatcher = networkWatcherLro.Value;
+
+                // Create storage account to store troubleshooting information
+                StorageSku storageSku = new StorageSku(StorageSkuName.StandardGrs);
+                StorageKind storageKind = StorageKind.Storage;
+                StorageAccountCreateOrUpdateContent storagedata = new StorageAccountCreateOrUpdateContent(storageSku, storageKind, resourceGroup.Data.Location)
+                {
+                };
+                var storageAccountLro = await resourceGroup.GetStorageAccounts().CreateOrUpdateAsync(WaitUntil.Completed, storageAccountName, storagedata);
+                StorageAccountResource storageAccount = storageAccountLro.Value;
+
+                // Create storage container to store troubleshooting results 
+                var accountKeyList = await storageAccount.GetKeysAsync().ToEnumerableAsync();
+                string accountKey = accountKeyList.First().Value;
+                string connectionString = $"DefaultEndpointsProtocol=https;AccountName={storageAccount.Data.Name};AccountKey={accountKey}";
+                //Utilities.CreateContainer(connectionString, "");
 
                 //// Run troubleshooting for the connection - result will be 'UnHealthy' as need to create symmetrical connection from second gateway to the first
                 //ITroubleshooting troubleshooting = nw.Troubleshoot()
