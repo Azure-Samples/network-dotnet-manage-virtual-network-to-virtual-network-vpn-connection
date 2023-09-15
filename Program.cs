@@ -33,7 +33,8 @@ namespace ManageVpnGatewayVNet2VNetConnection
         {
             string vnetName1 = Utilities.CreateRandomName("vnet1-");
             string vnetName2 = Utilities.CreateRandomName("vnet2-");
-            string vpnGatewayName = Utilities.CreateRandomName("vnp-gateway-");
+            string vnetGatewayName1 = Utilities.CreateRandomName("vnetGateway1-");
+            string vnetGatewayName2 = Utilities.CreateRandomName("vnetGateway2-");
             {
                 // Get default subscription
                 SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
@@ -68,21 +69,12 @@ namespace ManageVpnGatewayVNet2VNetConnection
                 // Create virtual network gateway
                 Utilities.Log("Creating virtual network gateway...");
 
-                var list = await resourceGroup.GetVirtualNetworkGateways().GetAllAsync().ToEnumerableAsync();
-                await Console.Out.WriteLineAsync();
-
                 //;
-                //    .WithExistingNetwork(network1)
-                //    .WithRouteBasedVpn()
-                //    ;
-
                 // Create two public ip for virtual network gateway
                 var pip1 = await Utilities.CreatePublicIP(resourceGroup);
                 var pip2 = await Utilities.CreatePublicIP(resourceGroup);
 
-                string virtualNetworkGatewayName = Utilities.CreateRandomName("azsmnet");
-                string ipConfigName = Utilities.CreateRandomName("azsmnet");
-                var virtualNetworkGateway = new VirtualNetworkGatewayData()
+                VirtualNetworkGatewayData vpnGatewayInput1 = new VirtualNetworkGatewayData()
                 {
                     Location = resourceGroup.Data.Location,
                     Sku = new VirtualNetworkGatewaySku()
@@ -95,23 +87,20 @@ namespace ManageVpnGatewayVNet2VNetConnection
                     GatewayType = VirtualNetworkGatewayType.Vpn,
                     VpnType = VpnType.RouteBased,
                     IPConfigurations =
-                {
-                    new VirtualNetworkGatewayIPConfiguration()
                     {
-                        Name = ipConfigName,
-                        PrivateIPAllocationMethod = NetworkIPAllocationMethod.Dynamic,
-                        PublicIPAddressId  = pip1.Data.Id,
-                        SubnetId = vnet1.Data.Subnets.First().Id,
-                  
+                        new VirtualNetworkGatewayIPConfiguration()
+                        {
+                            Name = Utilities.CreateRandomName("config"),
+                            PrivateIPAllocationMethod = NetworkIPAllocationMethod.Dynamic,
+                            PublicIPAddressId  = pip1.Data.Id,
+                            SubnetId = vnet1.Data.Subnets.First(item => item.Name == "GatewaySubnet").Id,
+                        }
                     }
-                }
                 };
-                var virtualNetworkGatewayCollection = resourceGroup.GetVirtualNetworkGateways();
-                var putVirtualNetworkGatewayResponseOperation = await virtualNetworkGatewayCollection.CreateOrUpdateAsync(WaitUntil.Completed, virtualNetworkGatewayName, virtualNetworkGateway);
+                var vpnGatewayLro1 = await resourceGroup.GetVirtualNetworkGateways().CreateOrUpdateAsync(WaitUntil.Completed, vnetGatewayName1, vpnGatewayInput1);
+                VirtualNetworkGatewayResource vpnGateway1 = vpnGatewayLro1.Value;
+                Utilities.Log($"Created virtual network gateway: {vpnGateway1.Data.Name}");
 
-
-                //Utilities.Log($"Created virtual network gateway: {vpnGateway.Data.Name}");
-                await Console.Out.WriteLineAsync();
                 //============================================================
                 // Create second virtual network
                 VirtualNetworkData vnetInput2 = new VirtualNetworkData()
@@ -125,31 +114,49 @@ namespace ManageVpnGatewayVNet2VNetConnection
                     },
                 };
                 var vnetLro2 = await resourceGroup.GetVirtualNetworks().CreateOrUpdateAsync(WaitUntil.Completed, vnetName2, vnetInput2);
-                VirtualNetworkResource vnet2 = vnetLro1.Value;
+                VirtualNetworkResource vnet2 = vnetLro2.Value;
                 Utilities.Log($"Created a virtual network: {vnet2.Data.Name}");
 
                 //============================================================
                 // Create second virtual network gateway
-                //Utilities.Log("Creating second virtual network gateway...");
-                //IVirtualNetworkGateway vngw2 = azure.VirtualNetworkGateways.Define(vpnGateway2Name)
-                //    .WithRegion(region)
-                //    .WithNewResourceGroup(rgName)
-                //    .WithExistingNetwork(network2)
-                //    .WithRouteBasedVpn()
-                //    .WithSku(VirtualNetworkGatewaySkuName.VpnGw1)
-                //    .Create();
-                //Utilities.Log("Created second virtual network gateway");
+                Utilities.Log("Creating second virtual network gateway...");
+                VirtualNetworkGatewayData vpnGatewayInput2 = new VirtualNetworkGatewayData()
+                {
+                    Location = resourceGroup.Data.Location,
+                    Sku = new VirtualNetworkGatewaySku()
+                    {
+                        Name = VirtualNetworkGatewaySkuName.Basic,
+                        Tier = VirtualNetworkGatewaySkuTier.Basic
+                    },
+                    Tags = { { "key", "value" } },
+                    EnableBgp = false,
+                    GatewayType = VirtualNetworkGatewayType.Vpn,
+                    VpnType = VpnType.RouteBased,
+                    IPConfigurations =
+                    {
+                        new VirtualNetworkGatewayIPConfiguration()
+                        {
+                            Name = Utilities.CreateRandomName("config"),
+                            PrivateIPAllocationMethod = NetworkIPAllocationMethod.Dynamic,
+                            PublicIPAddressId  = pip2.Data.Id,
+                            SubnetId = vnet2.Data.Subnets.First(item => item.Name == "GatewaySubnet").Id,
+                        }
+                    }
+                };
+                var vpnGatewayLro2 = await resourceGroup.GetVirtualNetworkGateways().CreateOrUpdateAsync(WaitUntil.Completed, vnetGatewayName2, vpnGatewayInput2);
+                VirtualNetworkGatewayResource vpnGateway2 = vpnGatewayLro2.Value;
+                Utilities.Log($"Created second virtual network gateway: {vnet2.Data.Name}");
 
-                ////============================================================
-                //// Create virtual network gateway connection
-                //Utilities.Log("Creating virtual network gateway connection...");
+                //============================================================
+                // Create virtual network gateway connection
+                Utilities.Log("Creating virtual network gateway connection...");
                 //IVirtualNetworkGatewayConnection connection = vngw1.Connections
                 //    .Define(connectionName)
                 //    .WithVNetToVNet()
                 //    .WithSecondVirtualNetworkGateway(vngw2)
                 //    .WithSharedKey("MySecretKey")
                 //    .Create();
-                //Utilities.Log("Created virtual network gateway connection");
+                Utilities.Log("Created virtual network gateway connection");
 
                 ////============================================================
                 //// Troubleshoot the connection
