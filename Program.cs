@@ -12,6 +12,9 @@ using Azure.ResourceManager.Network;
 using Azure.ResourceManager.Network.Models;
 using Azure.ResourceManager.Storage.Models;
 using Azure.ResourceManager.Storage;
+using Microsoft.Identity.Client.Extensions.Msal;
+using Azure.ResourceManager.Compute.Models;
+using Azure.ResourceManager.Compute;
 
 namespace ManageVpnGatewayVNet2VNetConnection
 {
@@ -40,19 +43,57 @@ namespace ManageVpnGatewayVNet2VNetConnection
             string vnetGatewayName2 = Utilities.CreateRandomName("vnetGateway2-");
             string pipName1 = Utilities.CreateRandomName("pip1-");
             string pipName2 = Utilities.CreateRandomName("pip2-");
-            string vpnConnectionName = Utilities.CreateRandomName("vnet-to-vnet-");
             string networkWatcherName = Utilities.CreateRandomName("watcher");
             string storageAccountName = Utilities.CreateRandomName("azstorageaccoun");
+            string containerName = Utilities.CreateRandomName("container");
+            string vmName1 = Utilities.CreateRandomName("vm1-");
+            string vmName2 = Utilities.CreateRandomName("vm2-");
+            string vpnConnectionName1 = "vnet1-to-vnet2-connection";
+            string vpnConnectionName2 = "vnet2-to-vnet1-connection";
 
-            rgName = "NetworkSampleRG000";
-            vnetName1 = "vnet1-00";
-            vnetName2 = "vnet2-00";
-            vnetGatewayName1 = "vnetGateway1-00";
-            vnetGatewayName2 = "vnetGateway2-00";
-            pipName1 = "pip1-00";
-            pipName2 = "pip2-00";
-            networkWatcherName = "watcher-00";
-            storageAccountName = "azstorageaccoun5154";
+            //rgName = "NetworkSampleRG1000";
+            //vnetName1 = "vnet1-100";
+            //vnetName2 = "vnet2-100";
+            //vnetGatewayName1 = "vnetGateway1-100";
+            //vnetGatewayName2 = "vnetGateway2-100";
+            //pipName1 = "pip1-100";
+            //pipName2 = "pip2-100";
+            //networkWatcherName = "watcher-100";
+            //storageAccountName = "azstorageaccoun112400";
+
+
+
+            if (false)
+            {
+                SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
+                ArmOperation<ResourceGroupResource> rgLro = await subscription.GetResourceGroups().CreateOrUpdateAsync(WaitUntil.Completed, rgName, new ResourceGroupData(AzureLocation.EastUS));
+                ResourceGroupResource resourceGroup = rgLro.Value;
+
+                var xxlist = await resourceGroup.GetVirtualNetworkGatewayConnections().GetAllAsync().ToEnumerableAsync();
+
+                var watcherRG = await subscription.GetResourceGroups().GetAsync("NetworkWatcherRG");
+                var watchers = await watcherRG.Value.GetNetworkWatchers().GetAllAsync().ToEnumerableAsync();
+                var storages = await resourceGroup.GetStorageAccounts().GetAllAsync().ToEnumerableAsync();
+                var storage = storages.FirstOrDefault();
+                var blobs = await storage.GetBlobService().GetBlobContainers().GetAllAsync().ToEnumerableAsync();
+                string uri = $"https://{storage.Data.Name}.blob.core.windows.net/{blobs[0].Data.Name}";
+                ;
+
+                var watcher = watchers[0];
+                var connectionId = xxlist[0].Data.Id.ToString();
+                var targetId = new ResourceIdentifier(connectionId);
+                var storageid = new ResourceIdentifier("/subscriptions/db1ab6f0-4769-4b27-930e-01e2ef9c123c/resourceGroups/NetworkSampleRG1000/providers/Microsoft.Storage/storageAccounts/azstorageaccoun112400");
+                Uri storagePath = new Uri(uri);
+                TroubleshootingContent troubleshootingContent = new TroubleshootingContent(targetId, storageid, storagePath);
+
+                var result = await watcher.GetTroubleshootingAsync(WaitUntil.Completed, troubleshootingContent);
+
+                Utilities.Log(result.Value.Code);
+                ;
+            }
+
+
+
             {
                 // Get default subscription
                 SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
@@ -172,7 +213,7 @@ namespace ManageVpnGatewayVNet2VNetConnection
                     VirtualNetworkGateway2 = vpnGateway2.Data,
                     SharedKey = "MySecretKey"
                 };
-                var connectionLro = await resourceGroup.GetVirtualNetworkGatewayConnections().CreateOrUpdateAsync(WaitUntil.Completed, vpnConnectionName, gatewayConnectionInput);
+                var connectionLro = await resourceGroup.GetVirtualNetworkGatewayConnections().CreateOrUpdateAsync(WaitUntil.Completed, vpnConnectionName1, gatewayConnectionInput);
                 VirtualNetworkGatewayConnectionResource connection = connectionLro.Value;
                 Utilities.Log($"Created virtual network gateway connection: {connection.Data.Name}");
 
@@ -182,106 +223,85 @@ namespace ManageVpnGatewayVNet2VNetConnection
                 // create Network Watcher
                 NetworkWatcherData networkWatcherInput = new NetworkWatcherData()
                 {
-                    //Location = resourceGroup.Data.Location,
-                    Location = AzureLocation.WestUS2,
+                    Location = resourceGroup.Data.Location,
                 };
-                var networkWatcherLro = await resourceGroup.GetNetworkWatchers().CreateOrUpdateAsync(WaitUntil.Completed, networkWatcherName, networkWatcherInput);
+                //var networkWatcherLro = await resourceGroup.GetNetworkWatchers().CreateOrUpdateAsync(WaitUntil.Completed, networkWatcherName, networkWatcherInput);
+                //NetworkWatcherResource networkWatcher = networkWatcherLro.Value;
+                var watcherRG = await subscription.GetResourceGroups().GetAsync("NetworkWatcherRG");
+                var networkWatcherLro = await watcherRG.Value.GetNetworkWatchers().GetAsync("NetworkWatcher_eastus");
                 NetworkWatcherResource networkWatcher = networkWatcherLro.Value;
 
                 // Create storage account to store troubleshooting information
                 StorageSku storageSku = new StorageSku(StorageSkuName.StandardGrs);
                 StorageKind storageKind = StorageKind.Storage;
-                StorageAccountCreateOrUpdateContent storagedata = new StorageAccountCreateOrUpdateContent(storageSku, storageKind, resourceGroup.Data.Location)
-                {
-                };
+                StorageAccountCreateOrUpdateContent storagedata = new StorageAccountCreateOrUpdateContent(storageSku, storageKind, resourceGroup.Data.Location) { };
                 var storageAccountLro = await resourceGroup.GetStorageAccounts().CreateOrUpdateAsync(WaitUntil.Completed, storageAccountName, storagedata);
                 StorageAccountResource storageAccount = storageAccountLro.Value;
 
                 // Create storage container to store troubleshooting results 
-                var accountKeyList = await storageAccount.GetKeysAsync().ToEnumerableAsync();
-                string accountKey = accountKeyList.First().Value;
-                string connectionString = $"DefaultEndpointsProtocol=https;AccountName={storageAccount.Data.Name};AccountKey={accountKey}";
-                //Utilities.CreateContainer(connectionString, "");
+                BlobContainerData containerInput = new BlobContainerData() { };
+                var blobContainerLro = await storageAccount.GetBlobService().GetBlobContainers().CreateOrUpdateAsync(WaitUntil.Completed, containerName, containerInput);
+                BlobContainerResource container = blobContainerLro.Value;
 
-                //// Run troubleshooting for the connection - result will be 'UnHealthy' as need to create symmetrical connection from second gateway to the first
-                //ITroubleshooting troubleshooting = nw.Troubleshoot()
-                //        .WithTargetResourceId(connection.Id)
-                //        .WithStorageAccount(storageAccount.Id)
-                //        .WithStoragePath(storageAccount.EndPoints.Primary.Blob + containerName)
-                //        .Execute();
-                //Utilities.Log("Troubleshooting status is: " + troubleshooting.Code);
+                // Run troubleshooting for the connection - result will be 'UnHealthy' as need to create symmetrical connection from second gateway to the first
+                TroubleshootingContent troubleshootingContent = new TroubleshootingContent(
+                    targetResourceId: connection.Id,
+                    storageId: storageAccount.Id,
+                    storageUri: new Uri($"https://{storageAccount.Data.Name}.blob.core.windows.net/{container.Data.Name}"));
 
-                ////============================================================
-                ////  Create virtual network connection from second gateway to the first and run troubleshooting. Result will be 'Healthy'.
-                //vngw2.Connections
-                //        .Define(connection2Name)
-                //        .WithVNetToVNet()
-                //        .WithSecondVirtualNetworkGateway(vngw1)
-                //        .WithSharedKey("MySecretKey")
-                //        .Create();
-                //// Delay before running troubleshooting to wait for connection settings to propagate
-                //SdkContext.DelayProvider.Delay(250000);
-                //troubleshooting = nw.Troubleshoot()
-                //        .WithTargetResourceId(connection.Id)
-                //        .WithStorageAccount(storageAccount.Id)
-                //        .WithStoragePath(storageAccount.EndPoints.Primary.Blob + containerName)
-                //        .Execute();
-                //Utilities.Log("Troubleshooting status is: " + troubleshooting.Code);
+                var troubleshootingResult = await networkWatcher.GetTroubleshootingAsync(WaitUntil.Completed, troubleshootingContent);
+                Utilities.Log("Troubleshooting status is: " + troubleshootingResult.Value.Code);
 
-                ////============================================================
-                //// List VPN Gateway connections for particular gateway
+                //============================================================
+                //  Create virtual network connection from second gateway to the first and run troubleshooting. Result will be 'Healthy'.
+                var gatewayConnectionInput2 = new VirtualNetworkGatewayConnectionData(vpnGateway2.Data, connectionType)
+                {
+                    Location = resourceGroup.Data.Location,
+                    VirtualNetworkGateway2 = vpnGateway1.Data,
+                    SharedKey = "MySecretKey"
+                };
+                _ = await resourceGroup.GetVirtualNetworkGatewayConnections().CreateOrUpdateAsync(WaitUntil.Completed, vpnConnectionName2, gatewayConnectionInput2);
+                Utilities.Log("VNet2 to VNet1 gateway connection created");
+
+                troubleshootingResult = await networkWatcher.GetTroubleshootingAsync(WaitUntil.Completed, troubleshootingContent);
+                Utilities.Log("Troubleshooting status is: " + troubleshootingResult.Value.Code);
+
+                //============================================================
+                // List VPN Gateway connections for particular gateway
                 //var connections = vngw1.ListConnections();
-                //foreach (var conn in connections)
-                //{
-                //    Utilities.Print(conn);
-                //}
+                await foreach (var conn in vpnGateway1.GetConnectionsAsync())
+                {
+                    Utilities.Log(conn.Name);
+                }
 
-                ////============================================================
-                //// Create 2 virtual machines, each one in its network and verify connectivity between them
-                //List<ICreatable<IVirtualMachine>> vmDefinitions = new List<ICreatable<IVirtualMachine>>();
+                //============================================================
+                // Create 2 virtual machines, each one in its network and verify connectivity between them
 
-                //vmDefinitions.Add(azure.VirtualMachines.Define(vm1Name)
-                //        .WithRegion(region)
-                //        .WithExistingResourceGroup(rgName)
-                //        .WithExistingPrimaryNetwork(network1)
-                //        .WithSubnet("Subnet1")
-                //        .WithPrimaryPrivateIPAddressDynamic()
-                //        .WithoutPrimaryPublicIPAddress()
-                //        .WithPopularLinuxImage(KnownLinuxVirtualMachineImage.UbuntuServer16_04_Lts)
-                //        .WithRootUsername(rootname)
-                //        .WithRootPassword(password)
-                //        // Extension currently needed for network watcher support
-                //        .DefineNewExtension("networkWatcher")
-                //            .WithPublisher("Microsoft.Azure.NetworkWatcher")
-                //            .WithType("NetworkWatcherAgentLinux")
-                //            .WithVersion("1.4")
-                //            .Attach());
-                //vmDefinitions.Add(azure.VirtualMachines.Define(vm2Name)
-                //        .WithRegion(region)
-                //        .WithExistingResourceGroup(rgName)
-                //        .WithExistingPrimaryNetwork(network2)
-                //        .WithSubnet("Subnet2")
-                //        .WithPrimaryPrivateIPAddressDynamic()
-                //        .WithoutPrimaryPublicIPAddress()
-                //        .WithPopularLinuxImage(KnownLinuxVirtualMachineImage.UbuntuServer16_04_Lts)
-                //        .WithRootUsername(rootname)
-                //        .WithRootPassword(password)
-                //        // Extension currently needed for network watcher support
-                //        .DefineNewExtension("networkWatcher")
-                //            .WithPublisher("Microsoft.Azure.NetworkWatcher")
-                //            .WithType("NetworkWatcherAgentLinux")
-                //            .WithVersion("1.4")
-                //            .Attach());
-                //ICreatedResources<IVirtualMachine> createdVMs = azure.VirtualMachines.Create(vmDefinitions);
-                //IVirtualMachine vm1 = createdVMs.FirstOrDefault(vm => vm.Key == vmDefinitions[0].Key);
-                //IVirtualMachine vm2 = createdVMs.FirstOrDefault(vm => vm.Key == vmDefinitions[1].Key);
+                // Create vm1
+                NetworkInterfaceResource nic1 = await Utilities.CreateNetworkInterface(resourceGroup, vnet1);
+                VirtualMachineData vmInput1 = Utilities.GetDefaultVMInputData(resourceGroup, vmName1);
+                vmInput1.NetworkProfile.NetworkInterfaces.Add(new VirtualMachineNetworkInterfaceReference() { Id = nic1.Id, Primary = true });
+                var vmLro1 = await resourceGroup.GetVirtualMachines().CreateOrUpdateAsync(WaitUntil.Completed, vmName1, vmInput1);
+                VirtualMachineResource vm1 = vmLro1.Value;
+                // Create vm2
+                NetworkInterfaceResource nic2 = await Utilities.CreateNetworkInterface(resourceGroup, vnet2);
+                VirtualMachineData vmInput2 = Utilities.GetDefaultVMInputData(resourceGroup, vmName2);
+                vmInput2.NetworkProfile.NetworkInterfaces.Add(new VirtualMachineNetworkInterfaceReference() { Id = nic2.Id, Primary = true });
+                var vmLro2 = await resourceGroup.GetVirtualMachines().CreateOrUpdateAsync(WaitUntil.Completed, vmName2, vmInput2);
+                VirtualMachineResource vm2 = vmLro2.Value;
 
                 //IConnectivityCheck connectivity = nw.CheckConnectivity()
                 //        .ToDestinationResourceId(vm2.Id)
                 //        .ToDestinationPort(22)
                 //        .FromSourceVirtualMachine(vm1.Id)
                 //        .Execute();
-                //Utilities.Log("Connectivity status: " + connectivity.ConnectionStatus);
+
+                ConnectivityContent content1 = new ConnectivityContent(new ConnectivitySource(vm1.Id), new ConnectivityDestination() { Port = 22 });
+                ConnectivityContent content2 = new ConnectivityContent(new ConnectivitySource(vm2.Id), new ConnectivityDestination() { Port = 22 });
+                var connectivityResult1 = await networkWatcher.CheckConnectivityAsync(WaitUntil.Completed, content1);
+                var connectivityResult2 = await networkWatcher.CheckConnectivityAsync(WaitUntil.Completed, content2);
+                Utilities.Log("Connectivity status: " + connectivityResult1.Value.NetworkConnectionStatus);
+                Utilities.Log("Connectivity status: " + connectivityResult2.Value.NetworkConnectionStatus);
             }
             {
                 try

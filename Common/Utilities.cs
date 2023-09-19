@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License. See License.txt in the project root for license information.
 
+using Azure.ResourceManager.Compute;
+using Azure.ResourceManager.Compute.Models;
 using Azure.ResourceManager.Network;
 using Azure.ResourceManager.Network.Models;
 using Azure.ResourceManager.Resources;
@@ -78,12 +80,61 @@ namespace Azure.ResourceManager.Samples.Common
             return publicIPLro.Value;
         }
 
-        public static async Task CreateContainer(StorageAccountResource storageAccount, string containerName = null)
+        public static async Task<NetworkInterfaceResource> CreateNetworkInterface(ResourceGroupResource resourceGroup, VirtualNetworkResource vnet, string nicName = null)
         {
-            containerName = containerName is null ? CreateRandomName("container") : containerName;
-            BlobContainerData containerInput = new BlobContainerData();
-            var containerLro = await storageAccount.GetBlobService().GetBlobContainers().CreateOrUpdateAsync(WaitUntil.Completed, containerName, containerInput);
-            return containerLro.Value;
+            nicName = nicName is null ? CreateRandomName("nic") : nicName;
+
+            var nicInput = new NetworkInterfaceData()
+            {
+                Location = resourceGroup.Data.Location,
+                IPConfigurations =
+                    {
+                        new NetworkInterfaceIPConfigurationData()
+                        {
+                            Name = "default-config",
+                            PrivateIPAllocationMethod = NetworkIPAllocationMethod.Dynamic,
+                            Subnet = new SubnetData()
+                            {
+                                Id = vnet.Data.Subnets.First(item => item.Name != "GatewaySubnet").Id
+                            }
+                        }
+                    }
+            };
+            var networkInterfaceLro = await resourceGroup.GetNetworkInterfaces().CreateOrUpdateAsync(WaitUntil.Completed, nicName, nicInput);
+            return networkInterfaceLro.Value;
         }
+
+        public static VirtualMachineData GetDefaultVMInputData(ResourceGroupResource resourceGroup, string vmName) =>
+            new VirtualMachineData(resourceGroup.Data.Location)
+            {
+                HardwareProfile = new VirtualMachineHardwareProfile() { VmSize = VirtualMachineSizeType.StandardB4Ms },
+                StorageProfile = new VirtualMachineStorageProfile()
+                {
+                    ImageReference = new ImageReference()
+                    {
+                        Publisher = "MicrosoftWindowsDesktop",
+                        Offer = "Windows-10",
+                        Sku = "win10-21h2-ent",
+                        Version = "latest",
+                    },
+                    OSDisk = new VirtualMachineOSDisk(DiskCreateOptionType.FromImage)
+                    {
+                        OSType = SupportedOperatingSystemType.Windows,
+                        Name = CreateRandomName("myVMOSdisk"),
+                        Caching = CachingType.ReadOnly,
+                        ManagedDisk = new VirtualMachineManagedDisk()
+                        {
+                            StorageAccountType = StorageAccountType.StandardLrs,
+                        },
+                    },
+                },
+                OSProfile = new VirtualMachineOSProfile()
+                {
+                    AdminUsername = CreateUsername(),
+                    AdminPassword = CreatePassword(),
+                    ComputerName = vmName,
+                },
+                NetworkProfile = new VirtualMachineNetworkProfile() { }
+            };
     }
 }
