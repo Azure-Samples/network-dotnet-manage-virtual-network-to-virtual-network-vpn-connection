@@ -263,6 +263,9 @@ namespace ManageVpnGatewayVNet2VNetConnection
                 _ = await resourceGroup.GetVirtualNetworkGatewayConnections().CreateOrUpdateAsync(WaitUntil.Completed, vpnConnectionName2, gatewayConnectionInput2);
                 Utilities.Log("VNet2 to VNet1 gateway connection created");
 
+                // Delay before running troubleshooting to wait for connection settings to propagate
+                Thread.Sleep(250000);
+
                 troubleshootingResult = await networkWatcher.GetTroubleshootingAsync(WaitUntil.Completed, troubleshootingContent);
                 Utilities.Log("Troubleshooting status is: " + troubleshootingResult.Value.Code);
 
@@ -277,18 +280,35 @@ namespace ManageVpnGatewayVNet2VNetConnection
                 //============================================================
                 // Create 2 virtual machines, each one in its network and verify connectivity between them
 
+                // Definate vm extension input data
+                string extensionName = "AzureNetworkWatcherExtension";
+                var extensionInput = new VirtualMachineExtensionData(resourceGroup.Data.Location)
+                {
+                    Publisher = "Microsoft.Azure.NetworkWatcher",
+                    ExtensionType = "NetworkWatcherAgentWindows",
+                    TypeHandlerVersion = "1.*"
+                };
+
+                //  .DefineNewExtension("networkWatcher")
+                //            .WithPublisher("Microsoft.Azure.NetworkWatcher")
+                //            .WithType("NetworkWatcherAgentLinux")
+                //            .WithVersion("1.4")
+                //            .Attach());
+
                 // Create vm1
                 NetworkInterfaceResource nic1 = await Utilities.CreateNetworkInterface(resourceGroup, vnet1);
                 VirtualMachineData vmInput1 = Utilities.GetDefaultVMInputData(resourceGroup, vmName1);
                 vmInput1.NetworkProfile.NetworkInterfaces.Add(new VirtualMachineNetworkInterfaceReference() { Id = nic1.Id, Primary = true });
                 var vmLro1 = await resourceGroup.GetVirtualMachines().CreateOrUpdateAsync(WaitUntil.Completed, vmName1, vmInput1);
                 VirtualMachineResource vm1 = vmLro1.Value;
+                _ = await vm1.GetVirtualMachineExtensions().CreateOrUpdateAsync(WaitUntil.Completed, extensionName, extensionInput);
                 // Create vm2
                 NetworkInterfaceResource nic2 = await Utilities.CreateNetworkInterface(resourceGroup, vnet2);
                 VirtualMachineData vmInput2 = Utilities.GetDefaultVMInputData(resourceGroup, vmName2);
                 vmInput2.NetworkProfile.NetworkInterfaces.Add(new VirtualMachineNetworkInterfaceReference() { Id = nic2.Id, Primary = true });
                 var vmLro2 = await resourceGroup.GetVirtualMachines().CreateOrUpdateAsync(WaitUntil.Completed, vmName2, vmInput2);
                 VirtualMachineResource vm2 = vmLro2.Value;
+                _ = await vm2.GetVirtualMachineExtensions().CreateOrUpdateAsync(WaitUntil.Completed, extensionName, extensionInput);
 
                 //IConnectivityCheck connectivity = nw.CheckConnectivity()
                 //        .ToDestinationResourceId(vm2.Id)
@@ -296,8 +316,12 @@ namespace ManageVpnGatewayVNet2VNetConnection
                 //        .FromSourceVirtualMachine(vm1.Id)
                 //        .Execute();
 
-                ConnectivityContent content1 = new ConnectivityContent(new ConnectivitySource(vm1.Id), new ConnectivityDestination() { Port = 22 });
-                ConnectivityContent content2 = new ConnectivityContent(new ConnectivitySource(vm2.Id), new ConnectivityDestination() { Port = 22 });
+                ConnectivityContent content1 = new ConnectivityContent(
+                    new ConnectivitySource(vm1.Id),
+                    new ConnectivityDestination() { Port = 22, ResourceId = vm2.Id });
+                ConnectivityContent content2 = new ConnectivityContent(
+                    new ConnectivitySource(vm2.Id),
+                    new ConnectivityDestination() { Port = 22, ResourceId = vm1.Id });
                 var connectivityResult1 = await networkWatcher.CheckConnectivityAsync(WaitUntil.Completed, content1);
                 var connectivityResult2 = await networkWatcher.CheckConnectivityAsync(WaitUntil.Completed, content2);
                 Utilities.Log("Connectivity status: " + connectivityResult1.Value.NetworkConnectionStatus);
