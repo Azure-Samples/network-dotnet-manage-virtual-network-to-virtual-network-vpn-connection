@@ -61,39 +61,6 @@ namespace ManageVpnGatewayVNet2VNetConnection
             //networkWatcherName = "watcher-100";
             //storageAccountName = "azstorageaccoun112400";
 
-
-
-            if (false)
-            {
-                SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
-                ArmOperation<ResourceGroupResource> rgLro = await subscription.GetResourceGroups().CreateOrUpdateAsync(WaitUntil.Completed, rgName, new ResourceGroupData(AzureLocation.EastUS));
-                ResourceGroupResource resourceGroup = rgLro.Value;
-
-                var xxlist = await resourceGroup.GetVirtualNetworkGatewayConnections().GetAllAsync().ToEnumerableAsync();
-
-                var watcherRG = await subscription.GetResourceGroups().GetAsync("NetworkWatcherRG");
-                var watchers = await watcherRG.Value.GetNetworkWatchers().GetAllAsync().ToEnumerableAsync();
-                var storages = await resourceGroup.GetStorageAccounts().GetAllAsync().ToEnumerableAsync();
-                var storage = storages.FirstOrDefault();
-                var blobs = await storage.GetBlobService().GetBlobContainers().GetAllAsync().ToEnumerableAsync();
-                string uri = $"https://{storage.Data.Name}.blob.core.windows.net/{blobs[0].Data.Name}";
-                ;
-
-                var watcher = watchers[0];
-                var connectionId = xxlist[0].Data.Id.ToString();
-                var targetId = new ResourceIdentifier(connectionId);
-                var storageid = new ResourceIdentifier("/subscriptions/db1ab6f0-4769-4b27-930e-01e2ef9c123c/resourceGroups/NetworkSampleRG1000/providers/Microsoft.Storage/storageAccounts/azstorageaccoun112400");
-                Uri storagePath = new Uri(uri);
-                TroubleshootingContent troubleshootingContent = new TroubleshootingContent(targetId, storageid, storagePath);
-
-                var result = await watcher.GetTroubleshootingAsync(WaitUntil.Completed, troubleshootingContent);
-
-                Utilities.Log(result.Value.Code);
-                ;
-            }
-
-
-
             {
                 // Get default subscription
                 SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
@@ -231,7 +198,7 @@ namespace ManageVpnGatewayVNet2VNetConnection
                 var networkWatcherLro = await watcherRG.Value.GetNetworkWatchers().GetAsync("NetworkWatcher_eastus");
                 NetworkWatcherResource networkWatcher = networkWatcherLro.Value;
 
-                // Create storage account to store troubleshooting information
+                //Create storage account to store troubleshooting information
                 StorageSku storageSku = new StorageSku(StorageSkuName.StandardGrs);
                 StorageKind storageKind = StorageKind.Storage;
                 StorageAccountCreateOrUpdateContent storagedata = new StorageAccountCreateOrUpdateContent(storageSku, storageKind, resourceGroup.Data.Location) { };
@@ -286,29 +253,28 @@ namespace ManageVpnGatewayVNet2VNetConnection
                 {
                     Publisher = "Microsoft.Azure.NetworkWatcher",
                     ExtensionType = "NetworkWatcherAgentWindows",
-                    TypeHandlerVersion = "1.*"
+                    TypeHandlerVersion = "1.4",
+                    AutoUpgradeMinorVersion = true,
                 };
 
-                //  .DefineNewExtension("networkWatcher")
-                //            .WithPublisher("Microsoft.Azure.NetworkWatcher")
-                //            .WithType("NetworkWatcherAgentLinux")
-                //            .WithVersion("1.4")
-                //            .Attach());
-
                 // Create vm1
+                Utilities.Log("Creating a vm...");
                 NetworkInterfaceResource nic1 = await Utilities.CreateNetworkInterface(resourceGroup, vnet1);
                 VirtualMachineData vmInput1 = Utilities.GetDefaultVMInputData(resourceGroup, vmName1);
                 vmInput1.NetworkProfile.NetworkInterfaces.Add(new VirtualMachineNetworkInterfaceReference() { Id = nic1.Id, Primary = true });
                 var vmLro1 = await resourceGroup.GetVirtualMachines().CreateOrUpdateAsync(WaitUntil.Completed, vmName1, vmInput1);
                 VirtualMachineResource vm1 = vmLro1.Value;
                 _ = await vm1.GetVirtualMachineExtensions().CreateOrUpdateAsync(WaitUntil.Completed, extensionName, extensionInput);
+                Utilities.Log($"Created vm: {vm1.Data.Name}");
                 // Create vm2
+                Utilities.Log("Creating a vm...");
                 NetworkInterfaceResource nic2 = await Utilities.CreateNetworkInterface(resourceGroup, vnet2);
                 VirtualMachineData vmInput2 = Utilities.GetDefaultVMInputData(resourceGroup, vmName2);
                 vmInput2.NetworkProfile.NetworkInterfaces.Add(new VirtualMachineNetworkInterfaceReference() { Id = nic2.Id, Primary = true });
                 var vmLro2 = await resourceGroup.GetVirtualMachines().CreateOrUpdateAsync(WaitUntil.Completed, vmName2, vmInput2);
                 VirtualMachineResource vm2 = vmLro2.Value;
                 _ = await vm2.GetVirtualMachineExtensions().CreateOrUpdateAsync(WaitUntil.Completed, extensionName, extensionInput);
+                Utilities.Log($"Created vm: {vm2.Data.Name}");
 
                 //IConnectivityCheck connectivity = nw.CheckConnectivity()
                 //        .ToDestinationResourceId(vm2.Id)
@@ -316,16 +282,13 @@ namespace ManageVpnGatewayVNet2VNetConnection
                 //        .FromSourceVirtualMachine(vm1.Id)
                 //        .Execute();
 
-                ConnectivityContent content1 = new ConnectivityContent(
+                ConnectivityContent content = new ConnectivityContent(
                     new ConnectivitySource(vm1.Id),
                     new ConnectivityDestination() { Port = 22, ResourceId = vm2.Id });
-                ConnectivityContent content2 = new ConnectivityContent(
-                    new ConnectivitySource(vm2.Id),
-                    new ConnectivityDestination() { Port = 22, ResourceId = vm1.Id });
-                var connectivityResult1 = await networkWatcher.CheckConnectivityAsync(WaitUntil.Completed, content1);
-                var connectivityResult2 = await networkWatcher.CheckConnectivityAsync(WaitUntil.Completed, content2);
-                Utilities.Log("Connectivity status: " + connectivityResult1.Value.NetworkConnectionStatus);
-                Utilities.Log("Connectivity status: " + connectivityResult2.Value.NetworkConnectionStatus);
+                var connectivityResult = await networkWatcher.CheckConnectivityAsync(WaitUntil.Completed, content);
+                Utilities.Log("Connectivity status: " + connectivityResult.Value.NetworkConnectionStatus);
+
+                //System.ArgumentException: 'Value cannot be an empty string. (Parameter 'resourceId')'
             }
             {
                 try
