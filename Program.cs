@@ -51,16 +51,7 @@ namespace ManageVpnGatewayVNet2VNetConnection
             string vpnConnectionName1 = "vnet1-to-vnet2-connection";
             string vpnConnectionName2 = "vnet2-to-vnet1-connection";
 
-            //rgName = "NetworkSampleRG1000";
-            //vnetName1 = "vnet1-100";
-            //vnetName2 = "vnet2-100";
-            //vnetGatewayName1 = "vnetGateway1-100";
-            //vnetGatewayName2 = "vnetGateway2-100";
-            //pipName1 = "pip1-100";
-            //pipName2 = "pip2-100";
-            //networkWatcherName = "watcher-100";
-            //storageAccountName = "azstorageaccoun112400";
-
+            try
             {
                 // Get default subscription
                 SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
@@ -276,20 +267,15 @@ namespace ManageVpnGatewayVNet2VNetConnection
                 _ = await vm2.GetVirtualMachineExtensions().CreateOrUpdateAsync(WaitUntil.Completed, extensionName, extensionInput);
                 Utilities.Log($"Created vm: {vm2.Data.Name}");
 
-                //IConnectivityCheck connectivity = nw.CheckConnectivity()
-                //        .ToDestinationResourceId(vm2.Id)
-                //        .ToDestinationPort(22)
-                //        .FromSourceVirtualMachine(vm1.Id)
-                //        .Execute();
-
+                // Block: https://github.com/Azure/azure-sdk-for-net/pull/38876
+                // System.ArgumentException: 'Value cannot be an empty string. (Parameter 'resourceId')'
                 ConnectivityContent content = new ConnectivityContent(
                     new ConnectivitySource(vm1.Id),
                     new ConnectivityDestination() { Port = 22, ResourceId = vm2.Id });
                 var connectivityResult = await networkWatcher.CheckConnectivityAsync(WaitUntil.Completed, content);
                 Utilities.Log("Connectivity status: " + connectivityResult.Value.NetworkConnectionStatus);
-
-                //System.ArgumentException: 'Value cannot be an empty string. (Parameter 'resourceId')'
             }
+            finally
             {
                 try
                 {
@@ -313,19 +299,18 @@ namespace ManageVpnGatewayVNet2VNetConnection
 
         public static async Task Main(string[] args)
         {
-            //=================================================================
-            // Authenticate
-            var clientId = Environment.GetEnvironmentVariable("CLIENT_ID");
-            var clientSecret = Environment.GetEnvironmentVariable("CLIENT_SECRET");
-            var tenantId = Environment.GetEnvironmentVariable("TENANT_ID");
-            var subscription = Environment.GetEnvironmentVariable("SUBSCRIPTION_ID");
-            ClientSecretCredential credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
-            ArmClient client = new ArmClient(credential, subscription);
-
-            await RunSample(client);
             try
             {
+                //=================================================================
+                // Authenticate
+                var clientId = Environment.GetEnvironmentVariable("CLIENT_ID");
+                var clientSecret = Environment.GetEnvironmentVariable("CLIENT_SECRET");
+                var tenantId = Environment.GetEnvironmentVariable("TENANT_ID");
+                var subscription = Environment.GetEnvironmentVariable("SUBSCRIPTION_ID");
+                ClientSecretCredential credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+                ArmClient client = new ArmClient(credential, subscription);
 
+                await RunSample(client);
             }
             catch (Exception ex)
             {
